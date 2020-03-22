@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: {{ include "etcd-snapshot.fullname" . }}-etcd
+  labels:
+    {{- include "etcd-snapshot.labels" . | nindent 4 }}
+subsets:
+- addresses:
+{{- range $value := .Values.etcd.ip }}
+  - ip: {{ $value }}
+{{- end }}
+  ports:
+  - name: https
+    port: {{ .Values.etcd.port }}
+    protocol: TCP

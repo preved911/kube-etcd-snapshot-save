@@ -1,0 +1,44 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: {{ include "etcd-snapshot.fullname" . }}
+  labels:
+    {{- include "etcd-snapshot.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: etcdctl
+            image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+            imagePullPolicy: {{ .Values.image.pullPolicy }}
+            args:
+              - --cacert=/certs/ca.crt
+              - --cert=/certs/client.crt
+              - --key=/certs/client.key
+              - --endpoints=etcd-snapshot-etcd:2379
+              - --s3-endpoint={{ .Values.minio.endpoint }}
+              - --s3-bucket={{ .Values.minio.bucket }}
+              - --s3-access-key=$(MINIO_ACCESS_KEY)
+              - --s3-secret-key=$(MINIO_SECRET_KEY)
+            env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.secret }}
+                  key: accesskey
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.secret }}
+                  key: secretkey
+            volumeMounts:
+            - mountPath: /certs
+              name: certs
+          restartPolicy: OnFailure
+          volumes:
+          - name: certs
+            secret:
+              secretName: {{ include "etcd-snapshot.fullname" . }}-certs

@@ -1,0 +1,25 @@
+# Default values for etcd-snapshot.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+image:
+  repository: etcd-snapshot-save
+  tag: v0.0.0
+  pullPolicy: IfNotPresent
+
+etcd:
+  ip:
+    - 127.0.0.1
+  port: 2379
+
+schedule: "0 0 * * *"
+
+minio:
+  endpoint: minio
+  bucket: etcd-backups
+  secret: minio
+
+tls:
+  rootCA: ""
+  clientCrt: ""
+  clientKey: ""
