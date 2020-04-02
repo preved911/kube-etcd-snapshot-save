@@ -11,7 +11,7 @@ spec:
       template:
         spec:
           containers:
-          - name: etcdctl
+          - name: etcd-snapshot-save
             image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
             imagePullPolicy: {{ .Values.image.pullPolicy }}
             args:

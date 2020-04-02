@@ -6,7 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
+	// "log"
 	"os"
 	"path/filepath"
 	// "path"
@@ -23,7 +23,11 @@ import (
 	"go.etcd.io/etcd/etcdctl/ctlv3/command"
 	"go.etcd.io/etcd/pkg/transport"
 
-	"github.com/minio/minio-go/v6"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	// "github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 type secureCfg struct {
@@ -42,10 +46,12 @@ type authCfg struct {
 }
 
 type s3Cfg struct {
-	endpoint  string
-	accessKey string
-	secretKey string
-	bucket    string
+	endpoint       string
+	accessKey      string
+	secretKey      string
+	bucket         string
+	prefix         string
+	forcePathStyle bool
 }
 
 const (
@@ -90,10 +96,12 @@ func main() {
 	// rootCmd.PersistentFlags().StringVarP(&globalFlags.DNSClusterServiceName, "discovery-srv-name", "", "", "service name to query when using DNS discovery")
 
 	// s3 upload flags
-	rootCmd.PersistentFlags().StringVarP(&s3Flags.endpoint, "s3-endpoint", "", "", "s3 endpoint")
-	rootCmd.PersistentFlags().StringVarP(&s3Flags.accessKey, "s3-access-key", "", "", "s3 access key id")
-	rootCmd.PersistentFlags().StringVarP(&s3Flags.secretKey, "s3-secret-key", "", "", "s3 secret access key")
-	rootCmd.PersistentFlags().StringVarP(&s3Flags.bucket, "s3-bucket", "", "", "s3 bucket")
+	rootCmd.PersistentFlags().StringVarP(&s3Flags.endpoint, "s3.endpoint", "", "", "s3 endpoint")
+	rootCmd.PersistentFlags().StringVarP(&s3Flags.accessKey, "s3.access-key", "", "", "access key id")
+	rootCmd.PersistentFlags().StringVarP(&s3Flags.secretKey, "s3.secret-key", "", "", "secret access key")
+	rootCmd.PersistentFlags().StringVarP(&s3Flags.bucket, "s3.bucket", "", "", "bucket name")
+	rootCmd.PersistentFlags().StringVarP(&s3Flags.prefix, "s3.prefix", "", "", "path to file prefix into s3")
+	rootCmd.PersistentFlags().BoolVarP(&s3Flags.forcePathStyle, "s3.force-path-style", "", false, "set force path style")
 
 	rootCmd.Execute()
 }
@@ -148,33 +156,60 @@ func snapshotUpload(snapshotPath string) error {
 
 // upload files from given array to remote s3 storage
 func s3upload(paths []string) error {
-	minioClient, err := minio.New(s3Flags.endpoint, s3Flags.accessKey, s3Flags.secretKey, true)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	bucket := aws.String(s3Flags.bucket)
+	// key := aws.String()
 
-	// minioClient.MakeBucket(s3Flags.bucket, s3Location)
-	err = minioClient.MakeBucket(s3Flags.bucket, s3Location)
-	if err != nil {
-		exists, errBucketExists := minioClient.BucketExists(s3Flags.bucket)
-		if !(errBucketExists == nil && exists) {
-			return err
-		}
+	// Configure to use MinIO Server
+	s3Config := &aws.Config{
+		Credentials: credentials.NewStaticCredentials(s3Flags.accessKey, s3Flags.secretKey, ""),
+		Endpoint:    aws.String(s3Flags.endpoint),
+		Region:      aws.String("us-east-1"),
+		// DisableSSL:       aws.Bool(true),
+		S3ForcePathStyle: aws.Bool(s3Flags.forcePathStyle),
 	}
+	newSession := session.New(s3Config)
+
+	s3Client := s3.New(newSession)
+
+	// Yandex Object Storage bucket creation not working
+	// cparams := &s3.CreateBucketInput{
+	// 	Bucket: bucket, // Required
+	// }
+
+	// Create a new bucket using the CreateBucket call.
+	// _, err := s3Client.CreateBucket(cparams)
+	// if err != nil {
+	// 	return err
+	// }
 
 	now := time.Now()
 
 	for _, path := range paths {
-		objectName := filepath.Join(
-			fmt.Sprintf("%d/%02d", now.Year(), int(now.Month())),
-			filepath.Base(path))
+		key := aws.String(
+			filepath.Join(
+				fmt.Sprintf("%d/%02d", now.Year(), int(now.Month())),
+				filepath.Base(path)))
 
-		n, err := minioClient.FPutObject(s3Flags.bucket, objectName, path, minio.PutObjectOptions{})
+		if s3Flags.prefix != "" {
+			key = aws.String(
+				filepath.Join(
+					fmt.Sprintf("%s/%d/%02d", s3Flags.prefix, now.Year(), int(now.Month())),
+					filepath.Base(path)))
+		}
+
+		body, err := os.Open(path)
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Successfully uploaded %s of size %d\n", objectName, n)
+		_, err = s3Client.PutObject(&s3.PutObjectInput{
+			Body:   body,
+			Bucket: bucket,
+			Key:    key,
+		})
+		if err != nil {
+			return fmt.Errorf("Failed to upload data to %s/%s, %s\n", *bucket, *key, err.Error())
+		}
 	}
 
 	return nil
