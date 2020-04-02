@@ -14,10 +14,10 @@ etcd:
 
 schedule: "0 0 * * *"
 
-minio:
-  endpoint: minio
-  bucket: etcd-backups
-  secret: minio
+s3:
+  endpoint: object-storage-endpoint
+  bucket: etcd-snapshots
+  secret: object-storage-secret
 
 tls:
   rootCA: ""
